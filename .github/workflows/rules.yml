@@ -1,0 +1,16 @@
+name: rules
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit-test recording rules and alerts
+        run: docker run --rm --entrypoint promtool -v "$PWD/victoria:/victoria:ro" prom/prometheus:v2.55.1 test rules /victoria/tests/sli.test.yml
+      - name: Check that vmalert accepts the same files
+        run: docker run --rm --entrypoint /vmalert-prod -v "$PWD/victoria/rules:/rules:ro" victoriametrics/vmalert:v1.156.0 -rule=/rules/sli.yml -dryRun -notifier.blackhole

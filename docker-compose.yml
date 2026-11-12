@@ -1,0 +1,47 @@
+services:
+  app:
+    build: ./app
+    ports:
+      - "8080:8080"
+
+  victoria:
+    image: victoriametrics/victoria-metrics:v1.156.0
+    command:
+      - -promscrape.config=/etc/vm/scrape.yml
+      - -retentionPeriod=15d
+    volumes:
+      - ./victoria/scrape.yml:/etc/vm/scrape.yml:ro
+    ports:
+      - "8428:8428"
+    depends_on:
+      - app
+
+  vmalert:
+    image: victoriametrics/vmalert:v1.156.0
+    command:
+      - -rule=/etc/alerts/*.yml
+      - -datasource.url=http://victoria:8428
+      - -remoteRead.url=http://victoria:8428
+      - -remoteWrite.url=http://victoria:8428
+      - -evaluationInterval=15s
+      - -notifier.blackhole
+    volumes:
+      - ./victoria/rules:/etc/alerts:ro
+    depends_on:
+      - victoria
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_USERS_DEFAULT_THEME: dark
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - victoria
+      - vmalert

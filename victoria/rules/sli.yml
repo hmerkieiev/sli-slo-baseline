@@ -1,0 +1,321 @@
+# SLI spec for this sample. The numbers are the SRE workbook's starting
+# point for a 30-day window (workbook section 6), not a production promise.
+#
+# Availability
+#   good:  HTTP 2xx
+#   valid: HTTP 2xx or 5xx
+#   A 4xx is outside the SLI. It is not a success and it is not an outage.
+# Latency
+#   good:  a 2xx observation in the 300ms bucket (le="0.3")
+#   valid: a 2xx observation
+#   A 5xx is an availability failure. It is not a latency sample.
+#   The SLI is the bucket ratio. histogram_quantile interpolates and is only
+#   a diagnostic on the dashboard.
+#
+# Objectives, both over 30 days:
+#   availability 99.5% (error budget 0.5%)
+#   latency      99% of successful requests at or under 300ms (budget 1%)
+#
+# Burn rate = (1 - SLI) / (1 - objective). A burn rate of 1 spends the 30-day
+# budget exactly on schedule. The multipliers 14.4, 6, 3 and 1 come from the
+# window length. They stay the same if the objective changes, and they change
+# if the window stops being 30 days.
+#
+# Alert pairs, both windows must be over the threshold (short window is 1/12
+# of the long one, so the alert resets when the burn stops):
+#   page   5m  and 1h   burn > 14.4   about 2% of the budget in one hour
+#   page   30m and 6h   burn > 6      about 5% of the budget in six hours
+#   ticket 2h  and 1d   burn > 3      about 10% of the budget in one day
+#   ticket 6h  and 3d   burn > 1      about 10% of the budget in three days
+#
+# A full outage trips every pair at once. This stand has no Alertmanager, so
+# there is no inhibition. The page is the notification that would be acted on.
+#
+# The 0.1 request/second floor is for this stand. Below it, one failure
+# dominates the ratio. Raise it with the service's real traffic.
+# It sits on the short window. rate() over a window longer than the series
+# undercounts, and the short window is already the check that the burn is
+# still in progress.
+
+groups:
+  - name: sli-recording
+    rules:
+      - record: sli:http_availability:ratio_rate5m
+        expr: |
+          sum(rate(http_requests_total{status=~"2.."}[5m]))
+          /
+          sum(rate(http_requests_total{status=~"[25].."}[5m]))
+      - record: sli:http_availability:ratio_rate30m
+        expr: |
+          sum(rate(http_requests_total{status=~"2.."}[30m]))
+          /
+          sum(rate(http_requests_total{status=~"[25].."}[30m]))
+      - record: sli:http_availability:ratio_rate1h
+        expr: |
+          sum(rate(http_requests_total{status=~"2.."}[1h]))
+          /
+          sum(rate(http_requests_total{status=~"[25].."}[1h]))
+      - record: sli:http_availability:ratio_rate2h
+        expr: |
+          sum(rate(http_requests_total{status=~"2.."}[2h]))
+          /
+          sum(rate(http_requests_total{status=~"[25].."}[2h]))
+      - record: sli:http_availability:ratio_rate6h
+        expr: |
+          sum(rate(http_requests_total{status=~"2.."}[6h]))
+          /
+          sum(rate(http_requests_total{status=~"[25].."}[6h]))
+      - record: sli:http_availability:ratio_rate1d
+        expr: |
+          sum(rate(http_requests_total{status=~"2.."}[1d]))
+          /
+          sum(rate(http_requests_total{status=~"[25].."}[1d]))
+      - record: sli:http_availability:ratio_rate3d
+        expr: |
+          sum(rate(http_requests_total{status=~"2.."}[3d]))
+          /
+          sum(rate(http_requests_total{status=~"[25].."}[3d]))
+      - record: sli:http_availability:ratio_rate30d
+        expr: |
+          sum(rate(http_requests_total{status=~"2.."}[30d]))
+          /
+          sum(rate(http_requests_total{status=~"[25].."}[30d]))
+
+      - record: sli:http_latency:ratio_rate5m
+        expr: |
+          sum(rate(http_request_duration_seconds_bucket{status=~"2..",le="0.3"}[5m]))
+          /
+          sum(rate(http_request_duration_seconds_count{status=~"2.."}[5m]))
+      - record: sli:http_latency:ratio_rate30m
+        expr: |
+          sum(rate(http_request_duration_seconds_bucket{status=~"2..",le="0.3"}[30m]))
+          /
+          sum(rate(http_request_duration_seconds_count{status=~"2.."}[30m]))
+      - record: sli:http_latency:ratio_rate1h
+        expr: |
+          sum(rate(http_request_duration_seconds_bucket{status=~"2..",le="0.3"}[1h]))
+          /
+          sum(rate(http_request_duration_seconds_count{status=~"2.."}[1h]))
+      - record: sli:http_latency:ratio_rate2h
+        expr: |
+          sum(rate(http_request_duration_seconds_bucket{status=~"2..",le="0.3"}[2h]))
+          /
+          sum(rate(http_request_duration_seconds_count{status=~"2.."}[2h]))
+      - record: sli:http_latency:ratio_rate6h
+        expr: |
+          sum(rate(http_request_duration_seconds_bucket{status=~"2..",le="0.3"}[6h]))
+          /
+          sum(rate(http_request_duration_seconds_count{status=~"2.."}[6h]))
+      - record: sli:http_latency:ratio_rate1d
+        expr: |
+          sum(rate(http_request_duration_seconds_bucket{status=~"2..",le="0.3"}[1d]))
+          /
+          sum(rate(http_request_duration_seconds_count{status=~"2.."}[1d]))
+      - record: sli:http_latency:ratio_rate3d
+        expr: |
+          sum(rate(http_request_duration_seconds_bucket{status=~"2..",le="0.3"}[3d]))
+          /
+          sum(rate(http_request_duration_seconds_count{status=~"2.."}[3d]))
+      - record: sli:http_latency:ratio_rate30d
+        expr: |
+          sum(rate(http_request_duration_seconds_bucket{status=~"2..",le="0.3"}[30d]))
+          /
+          sum(rate(http_request_duration_seconds_count{status=~"2.."}[30d]))
+
+      - record: slo:http_availability:objective
+        expr: vector(0.995)
+      - record: slo:http_latency:objective
+        expr: vector(0.99)
+
+      # 1 means the whole budget is left. 0 means it is spent.
+      # A negative value means the service is past the objective.
+      - record: slo:http_availability_budget:remaining_ratio
+        expr: |
+          1 - (
+            (1 - sli:http_availability:ratio_rate30d)
+            /
+            (1 - slo:http_availability:objective)
+          )
+      - record: slo:http_latency_budget:remaining_ratio
+        expr: |
+          1 - (
+            (1 - sli:http_latency:ratio_rate30d)
+            /
+            (1 - slo:http_latency:objective)
+          )
+
+      - record: slo:http_availability_budget:burn_rate5m
+        expr: (1 - sli:http_availability:ratio_rate5m) / (1 - slo:http_availability:objective)
+      - record: slo:http_availability_budget:burn_rate30m
+        expr: (1 - sli:http_availability:ratio_rate30m) / (1 - slo:http_availability:objective)
+      - record: slo:http_availability_budget:burn_rate1h
+        expr: (1 - sli:http_availability:ratio_rate1h) / (1 - slo:http_availability:objective)
+      - record: slo:http_availability_budget:burn_rate2h
+        expr: (1 - sli:http_availability:ratio_rate2h) / (1 - slo:http_availability:objective)
+      - record: slo:http_availability_budget:burn_rate6h
+        expr: (1 - sli:http_availability:ratio_rate6h) / (1 - slo:http_availability:objective)
+      - record: slo:http_availability_budget:burn_rate1d
+        expr: (1 - sli:http_availability:ratio_rate1d) / (1 - slo:http_availability:objective)
+      - record: slo:http_availability_budget:burn_rate3d
+        expr: (1 - sli:http_availability:ratio_rate3d) / (1 - slo:http_availability:objective)
+
+      - record: slo:http_latency_budget:burn_rate5m
+        expr: (1 - sli:http_latency:ratio_rate5m) / (1 - slo:http_latency:objective)
+      - record: slo:http_latency_budget:burn_rate30m
+        expr: (1 - sli:http_latency:ratio_rate30m) / (1 - slo:http_latency:objective)
+      - record: slo:http_latency_budget:burn_rate1h
+        expr: (1 - sli:http_latency:ratio_rate1h) / (1 - slo:http_latency:objective)
+      - record: slo:http_latency_budget:burn_rate2h
+        expr: (1 - sli:http_latency:ratio_rate2h) / (1 - slo:http_latency:objective)
+      - record: slo:http_latency_budget:burn_rate6h
+        expr: (1 - sli:http_latency:ratio_rate6h) / (1 - slo:http_latency:objective)
+      - record: slo:http_latency_budget:burn_rate1d
+        expr: (1 - sli:http_latency:ratio_rate1d) / (1 - slo:http_latency:objective)
+      - record: slo:http_latency_budget:burn_rate3d
+        expr: (1 - sli:http_latency:ratio_rate3d) / (1 - slo:http_latency:objective)
+
+  - name: slo-alerts
+    rules:
+      - alert: AvailabilityBudgetBurnFast
+        expr: |
+          (
+            (slo:http_availability_budget:burn_rate5m > 14.4)
+            and on ()
+            (slo:http_availability_budget:burn_rate1h > 14.4)
+          )
+          and on ()
+          (sum(rate(http_requests_total{status=~"[25].."}[5m])) > 0.1)
+        for: 2m
+        labels:
+          severity: page
+          slo: availability
+          window: 5m_1h
+        annotations:
+          summary: Availability error budget is burning fast
+          description: The 5m and 1h burn rates are both above 14.4. That pace spends about 2% of the 30-day availability budget in one hour.
+
+      - alert: AvailabilityBudgetBurnSlow
+        expr: |
+          (
+            (slo:http_availability_budget:burn_rate30m > 6)
+            and on ()
+            (slo:http_availability_budget:burn_rate6h > 6)
+          )
+          and on ()
+          (sum(rate(http_requests_total{status=~"[25].."}[30m])) > 0.1)
+        for: 15m
+        labels:
+          severity: page
+          slo: availability
+          window: 30m_6h
+        annotations:
+          summary: Availability error budget is burning at the 6x page rate
+          description: The 30m and 6h burn rates are both above 6. That pace spends about 5% of the 30-day availability budget in six hours. This window is a page.
+
+      - alert: AvailabilityBudgetTicketDay
+        expr: |
+          (
+            (slo:http_availability_budget:burn_rate2h > 3)
+            and on ()
+            (slo:http_availability_budget:burn_rate1d > 3)
+          )
+          and on ()
+          (sum(rate(http_requests_total{status=~"[25].."}[2h])) > 0.1)
+        for: 30m
+        labels:
+          severity: ticket
+          slo: availability
+          window: 2h_1d
+        annotations:
+          summary: Availability error budget needs a ticket
+          description: The 2h and 1d burn rates are both above 3. That pace spends about 10% of the 30-day availability budget in one day. Open a ticket. Do not page.
+
+      - alert: AvailabilityBudgetTicket3d
+        expr: |
+          (
+            (slo:http_availability_budget:burn_rate6h > 1)
+            and on ()
+            (slo:http_availability_budget:burn_rate3d > 1)
+          )
+          and on ()
+          (sum(rate(http_requests_total{status=~"[25].."}[6h])) > 0.1)
+        for: 1h
+        labels:
+          severity: ticket
+          slo: availability
+          window: 6h_3d
+        annotations:
+          summary: Availability error budget is drifting
+          description: The 6h and 3d burn rates are both above 1. That pace spends about 10% of the 30-day availability budget in three days. Open a ticket. Do not page.
+
+      - alert: LatencyBudgetBurnFast
+        expr: |
+          (
+            (slo:http_latency_budget:burn_rate5m > 14.4)
+            and on ()
+            (slo:http_latency_budget:burn_rate1h > 14.4)
+          )
+          and on ()
+          (sum(rate(http_request_duration_seconds_count{status=~"2.."}[5m])) > 0.1)
+        for: 2m
+        labels:
+          severity: page
+          slo: latency
+          window: 5m_1h
+        annotations:
+          summary: Latency error budget is burning fast
+          description: The 5m and 1h burn rates are both above 14.4. That pace spends about 2% of the 30-day latency budget in one hour. The objective is 99% of successful requests at or under 300ms.
+
+      - alert: LatencyBudgetBurnSlow
+        expr: |
+          (
+            (slo:http_latency_budget:burn_rate30m > 6)
+            and on ()
+            (slo:http_latency_budget:burn_rate6h > 6)
+          )
+          and on ()
+          (sum(rate(http_request_duration_seconds_count{status=~"2.."}[30m])) > 0.1)
+        for: 15m
+        labels:
+          severity: page
+          slo: latency
+          window: 30m_6h
+        annotations:
+          summary: Latency error budget is burning at the 6x page rate
+          description: The 30m and 6h burn rates are both above 6. That pace spends about 5% of the 30-day latency budget in six hours. This window is a page.
+
+      - alert: LatencyBudgetTicketDay
+        expr: |
+          (
+            (slo:http_latency_budget:burn_rate2h > 3)
+            and on ()
+            (slo:http_latency_budget:burn_rate1d > 3)
+          )
+          and on ()
+          (sum(rate(http_request_duration_seconds_count{status=~"2.."}[2h])) > 0.1)
+        for: 30m
+        labels:
+          severity: ticket
+          slo: latency
+          window: 2h_1d
+        annotations:
+          summary: Latency error budget needs a ticket
+          description: The 2h and 1d burn rates are both above 3. That pace spends about 10% of the 30-day latency budget in one day. Open a ticket. Do not page.
+
+      - alert: LatencyBudgetTicket3d
+        expr: |
+          (
+            (slo:http_latency_budget:burn_rate6h > 1)
+            and on ()
+            (slo:http_latency_budget:burn_rate3d > 1)
+          )
+          and on ()
+          (sum(rate(http_request_duration_seconds_count{status=~"2.."}[6h])) > 0.1)
+        for: 1h
+        labels:
+          severity: ticket
+          slo: latency
+          window: 6h_3d
+        annotations:
+          summary: Latency error budget is drifting
+          description: The 6h and 3d burn rates are both above 1. That pace spends about 10% of the 30-day latency budget in three days. Open a ticket. Do not page.

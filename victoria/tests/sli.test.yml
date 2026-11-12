@@ -1,0 +1,184 @@
+# promtool unit tests for the SLI rules.
+# A linear counter has a constant rate, so a long window and a short window
+# agree. That is enough to prove which alert fires, and when.
+rule_files:
+  - ../rules/sli.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: successful traffic keeps both the ratio and the alerts quiet
+    interval: 1m
+    input_series:
+      - series: http_requests_total{handler="ok",status="200"}
+        values: 0+60x20
+    promql_expr_test:
+      - expr: sli:http_availability:ratio_rate5m > bool 0.999
+        eval_time: 10m
+        exp_samples:
+          - labels: "{}"
+            value: 1
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AvailabilityBudgetBurnFast
+        exp_alerts: []
+
+  - name: ten percent 5xx burns at 20x and pages on the fast window first
+    interval: 1m
+    input_series:
+      - series: http_requests_total{handler="ok",status="200"}
+        values: 0+54x130
+      - series: http_requests_total{handler="fail",status="500"}
+        values: 0+6x130
+    promql_expr_test:
+      - expr: sli:http_availability:ratio_rate5m < bool 0.91
+        eval_time: 10m
+        exp_samples:
+          - labels: "{}"
+            value: 1
+      - expr: sli:http_availability:ratio_rate5m > bool 0.89
+        eval_time: 10m
+        exp_samples:
+          - labels: "{}"
+            value: 1
+      - expr: slo:http_availability_budget:burn_rate5m > bool 14.4
+        eval_time: 10m
+        exp_samples:
+          - labels: "{}"
+            value: 1
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AvailabilityBudgetBurnFast
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              slo: availability
+              window: 5m_1h
+            exp_annotations:
+              summary: Availability error budget is burning fast
+              description: The 5m and 1h burn rates are both above 14.4. That pace spends about 2% of the 30-day availability budget in one hour.
+      - eval_time: 10m
+        alertname: AvailabilityBudgetBurnSlow
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: AvailabilityBudgetBurnSlow
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              slo: availability
+              window: 30m_6h
+            exp_annotations:
+              summary: Availability error budget is burning at the 6x page rate
+              description: The 30m and 6h burn rates are both above 6. That pace spends about 5% of the 30-day availability budget in six hours. This window is a page.
+      - eval_time: 25m
+        alertname: AvailabilityBudgetTicketDay
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: AvailabilityBudgetTicketDay
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              slo: availability
+              window: 2h_1d
+            exp_annotations:
+              summary: Availability error budget needs a ticket
+              description: The 2h and 1d burn rates are both above 3. That pace spends about 10% of the 30-day availability budget in one day. Open a ticket. Do not page.
+      - eval_time: 60m
+        alertname: AvailabilityBudgetTicket3d
+        exp_alerts: []
+      - eval_time: 120m
+        alertname: AvailabilityBudgetTicket3d
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              slo: availability
+              window: 6h_3d
+            exp_annotations:
+              summary: Availability error budget is drifting
+              description: The 6h and 3d burn rates are both above 1. That pace spends about 10% of the 30-day availability budget in three days. Open a ticket. Do not page.
+
+  - name: a 404 is outside the availability SLI
+    interval: 1m
+    input_series:
+      - series: http_requests_total{handler="other",status="404"}
+        values: 0+60x20
+    promql_expr_test:
+      - expr: sli:http_availability:ratio_rate5m
+        eval_time: 10m
+        exp_samples: []
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AvailabilityBudgetBurnFast
+        exp_alerts: []
+
+  - name: 404s next to successes do not dilute availability
+    interval: 1m
+    input_series:
+      - series: http_requests_total{handler="ok",status="200"}
+        values: 0+60x20
+      - series: http_requests_total{handler="other",status="404"}
+        values: 0+60x20
+    promql_expr_test:
+      - expr: sli:http_availability:ratio_rate5m > bool 0.999
+        eval_time: 10m
+        exp_samples:
+          - labels: "{}"
+            value: 1
+
+  - name: slow successes burn the latency budget and leave availability alone
+    interval: 1m
+    input_series:
+      - series: http_requests_total{handler="slow",status="200"}
+        values: 0+60x130
+      - series: http_request_duration_seconds_bucket{handler="slow",status="200",le="0.3"}
+        values: 0+48x130
+      - series: http_request_duration_seconds_count{handler="slow",status="200"}
+        values: 0+60x130
+    promql_expr_test:
+      - expr: sli:http_availability:ratio_rate5m > bool 0.999
+        eval_time: 10m
+        exp_samples:
+          - labels: "{}"
+            value: 1
+      - expr: sli:http_latency:ratio_rate5m < bool 0.81
+        eval_time: 10m
+        exp_samples:
+          - labels: "{}"
+            value: 1
+      - expr: sli:http_latency:ratio_rate5m > bool 0.79
+        eval_time: 10m
+        exp_samples:
+          - labels: "{}"
+            value: 1
+      - expr: slo:http_latency_budget:burn_rate5m > bool 14.4
+        eval_time: 10m
+        exp_samples:
+          - labels: "{}"
+            value: 1
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AvailabilityBudgetBurnFast
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: LatencyBudgetBurnFast
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              slo: latency
+              window: 5m_1h
+            exp_annotations:
+              summary: Latency error budget is burning fast
+              description: The 5m and 1h burn rates are both above 14.4. That pace spends about 2% of the 30-day latency budget in one hour. The objective is 99% of successful requests at or under 300ms.
+      - eval_time: 10m
+        alertname: LatencyBudgetBurnSlow
+        exp_alerts: []
+      - eval_time: 120m
+        alertname: LatencyBudgetTicket3d
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              slo: latency
+              window: 6h_3d
+            exp_annotations:
+              summary: Latency error budget is drifting
+              description: The 6h and 3d burn rates are both above 1. That pace spends about 10% of the 30-day latency budget in three days. Open a ticket. Do not page.
